@@ -1,381 +1,278 @@
-# Claude Waker ⏰
+# Claude Waker
 
-自动唤醒 Claude 账号，优化 5 小时限额使用窗口 | Claude Scheduler | Claude Wakeup Tool | Claude Auto Timer
+自動安排 Claude Code 喚醒請求，協助把 Claude Pro/Max 的 5 小時用量窗口對齊到你想要的工作節奏。
 
-> **Automatic Claude account scheduler for optimizing 5-hour usage quota windows**
+> 本專案 fork 自 [weidwonder/claude-waker](https://github.com/weidwonder/claude-waker)，目前版本已加入 reset time 查詢、條件式喚醒、隔離 worker、預算限制與更完整的 cron 管理。
 >
-> [English Documentation](README.en.md) | 中文文档
+> 繁體中文文件 | [English Documentation](README.en.md)
 
-**关键词**: Claude定时唤醒 | Claude调度器 | Claude自动化 | Claude Pro优化 | Claude Max工具 | claude scheduler | claude wakeup | claude timer | claude automation | claude quota optimizer
+## 專案用途
 
-## 📖 项目背景
+Claude Pro/Max 的 5 小時用量窗口通常會從第一次使用開始計算。如果你在不理想的時間第一次使用 Claude，可能會讓重置時間卡在工作流程中間。
 
-### 问题
+Claude Waker 會在你設定的時間點由 cron 自動執行。每次執行時，它會：
 
-Claude Pro/Max 账号有每 5 小时的使用限额，但这个限额**不是固定时间重置**，而是从**第一次使用开始计时**。
+1. 依序檢查 `config.yaml` 中的每個帳號。
+2. 若有設定 `session_key`，先查詢 claude.ai 的 `five_hour_resets_at`。
+3. 如果目前窗口尚未到期，就略過該帳號，避免不必要的喚醒請求。
+4. 如果窗口已到期，或 reset time 查詢失敗，就透過 Claude Code CLI 送出低成本喚醒請求。
 
-这可能导致无法最大化利用额度。例如：
+這讓排程可以維持在固定時間執行，同時盡量避免在用量窗口尚未結束時重複觸發。
 
-- 工作时间：9:30-12:00, 13:30-18:30
-- 如果 10:00 第一次使用，很快耗尽额度
-- 下午 3:00 之前都无法继续使用（浪费了下午的工作时间）
+## 主要功能
 
-### 解决方案
+- 支援多個 Claude 帳號依序處理。
+- 支援 `session_key` 查詢 5 小時與 7 天 reset time。
+- 只有在 5 小時窗口已到期時才喚醒；查詢失敗時會保守地直接喚醒。
+- 使用獨立 `wake_worker.py` 執行 Claude 請求，OAuth token 不會出現在命令列參數。
+- 支援自訂喚醒時間、喚醒 prompt、模型與單次請求預算。
+- 安裝腳本會建立 `.venv`、安裝依賴、連結 Claude CLI，並管理 crontab 區塊。
+- 支援 macOS 與 Linux。
 
-通过在**固定时间点**自动发送消息来"唤醒" Claude，主动触发计时窗口，从而优化使用时间：
+## 適合部署在哪裡
 
-- 早上 7:05 自动唤醒 → 12:00 重置
-- 中午 12:05 自动唤醒 → 17:00 重置
-- 下午 17:05 自动唤醒 → 22:00 重置
+建議部署在會長時間開機的機器，例如：
 
-**为什么是 05 分？** Claude 的 5 小时限额是按**整点计时**的（如 7:00-12:00），在 7:05 发送消息不会影响这 5 分钟，因为计时已经从 7:00 开始了。使用 05 分可以确保 cron 任务稳定触发。
+- 家用 NAS
+- VPS 或雲端主機
+- 長時間開機的 Mac、Linux 電腦
+- Raspberry Pi 或其他小型伺服器
 
-这样就能在工作时间内最大化利用额度！
+這個工具依賴 crontab 排程；如果機器關機或休眠，排程就不會執行。
 
-## ✨ 特性
+## 前置需求
 
-**🎯 核心优势**：
-- 🚀 **同时管理多个 Claude 账号** - 网上大多数工具只支持单账号，本工具可以一次性唤醒所有账号
-- ⚡ **极致轻量** - 单个 Python 文件 + 最小依赖，无复杂配置，资源占用极低
-- 🎨 **简单易用** - 一键安装，自动配置，无需编程知识
+1. Python 3.8+
+2. [uv](https://github.com/astral-sh/uv)
 
-**完整功能**：
-- ✅ 支持多个 Claude 账号同时唤醒
-- ✅ 自定义唤醒时间（可配置多个时间点）
-- ✅ 自动配置 crontab 定时任务（claude scheduler）
-- ✅ 最小化 API 请求（短 prompt + 快速超时）
-- ✅ 详细日志记录
-- ✅ 错误处理（单个账号失败不影响其他账号）
-- ✅ 支持 Linux 和 macOS
-
-## 🚀 快速开始
-
-### 部署建议
-
-**推荐部署环境**：
-- 🖥️ **常开机器**：家用 NAS、云服务器、个人电脑等 24 小时运行的设备
-- 💻 **操作系统**：macOS 或 Linux（推荐 Ubuntu/Debian）
-- ⚠️ **注意**：如果部署在个人电脑上，需要保持电脑开机以确保定时任务正常运行
-
-**为什么需要常开机器？**
-因为程序通过 crontab 定时任务运行，机器关机时任务无法执行。建议部署在服务器、NAS 或树莓派等常开设备上。
-
-### 前置要求
-
-1. **Python 3.8+**
-2. **uv** (快速的 Python 包管理器)
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
-3. **Claude CLI** (用于获取 OAuth Token)
+
+3. Claude Code CLI
+
    ```bash
    npm install -g @anthropic-ai/claude-code
    ```
 
-### 安装步骤
+   安裝後請確認可以執行：
 
-#### 1. 获取 OAuth Token
+   ```bash
+   claude --version
+   ```
 
-为每个 Claude 账号获取 OAuth Token：
+## 安裝
+
+### 1. 取得 Claude Code OAuth token
+
+每個帳號都需要一組 Claude Code OAuth token：
 
 ```bash
-# 获取第一个账号的 token
 claude setup-token
 ```
 
-这会打开浏览器进行认证，完成后会在终端输出 token，类似：
+完成瀏覽器登入後，終端機會顯示類似下面的 token：
 
+```text
+Your OAuth token: sk-ant-oat03-...
 ```
-Your OAuth token: sk-ant-oat03-...（很长的字符串）
-```
 
-**复制并保存这个 token**。
+請把 token 複製下來，稍後填入 `config.yaml` 的 `token` 欄位。
 
-如果有多个账号，退出当前账号后重复此步骤：
+如果你有多個 Claude 帳號，請在瀏覽器切換或登出帳號後，重複執行 `claude setup-token`。
+
+### 2. 取得 claude.ai sessionKey
+
+`session_key` 用於查詢目前帳號的 reset time。若沒有設定，Claude Waker 仍可運作，但每次排程都會直接嘗試喚醒。
+
+取得方式：
+
+1. 在瀏覽器登入 [claude.ai](https://claude.ai)。
+2. 開啟瀏覽器開發者工具。
+3. 找到 claude.ai 網站 cookie 中的 `sessionKey`。
+4. 將值填入 `config.yaml` 的 `session_key` 欄位。
+
+`session_key` 可能會過期；過期時工具會記錄警告，並改為直接喚醒。
+
+### 3. 建立設定檔
+
+第一次執行安裝腳本會從範例檔建立 `config.yaml`：
+
 ```bash
-# 在浏览器中登出 Claude
-# 再次运行获取另一个账号的 token
-claude setup-token
-```
-
-#### 2. 克隆并配置项目
-
-```bash
-# 克隆或下载项目
-cd claude_waker
-
-# 运行安装脚本
 ./setup.sh
 ```
 
-首次运行 `setup.sh` 会自动创建 `config.yaml`，提示你编辑配置。
-
-#### 3. 编辑配置文件
-
-编辑 `config.yaml`：
+看到提示後，編輯 `config.yaml`。
 
 ```yaml
-# Claude 账号列表
 accounts:
-  - name: "主账号"
-    token: "sk-ant-oat03-...（第一个账号的token）"
-    session_key: "sk-ant-sid01-...（claude.ai 的 sessionKey cookie）"
-  - name: "备用账号"
-    token: "sk-ant-oat03-...（第二个账号的token）"
-    session_key: "sk-ant-sid01-...（claude.ai 的 sessionKey cookie）"
+  - name: "主帳號"
+    token: "sk-ant-oat03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    session_key: "sk-ant-sid01-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  - name: "備用帳號"
+    token: "sk-ant-oat03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    session_key: "sk-ant-sid01-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-# 唤醒时间（小时，0-23）
-# 实际触发时间为每小时的 05 分
-wake_hours: "7,12,17"  # 在 7:05, 12:05, 17:05 唤醒
+# 排程小時，實際 cron 觸發時間固定為每小時的 05 分
+wake_hours: "7,12,17"
 
-# 喚醒訊息
-# 程式會另外使用 /usage 查詢用量；這裡保留一個低成本的真實模型請求來喚醒
+# 低成本喚醒請求使用的 prompt
 wake_prompt: "In one short sentence, confirm this scheduled Claude Code session is active and ready for use."
 
 # 單次喚醒請求的最高預算
 wake_max_budget_usd: 0.02
 
-# 喚醒請求使用的模型
-# 可填 Claude Code 支援的模型 alias 或完整模型名稱，例如 "haiku"
+# Claude Code CLI 支援的模型 alias 或完整模型名稱；留空則使用 CLI 預設模型
 wake_model: "haiku"
 ```
 
-#### 4. 完成安装
+### 4. 完成安裝並設定 cron
 
-编辑完配置后，再次运行安装脚本：
+填好設定後再次執行：
 
 ```bash
 ./setup.sh
 ```
 
-安装脚本会：
-- ✓ 创建虚拟环境（使用 uv）
-- ✓ 安装依赖
-- ✓ 将 Claude CLI 链接到 `.venv/bin/claude`，让 cron 能在干净环境中找到它
-- ✓ 验证配置和 token
-- ✓ 自动配置 crontab 定时任务
+安裝腳本會：
 
-## 📝 使用说明
+- 建立 `.venv`
+- 安裝 `requirements.txt`
+- 將目前可用的 `claude` 或 `claude-bun` 連結到 `.venv/bin/claude`
+- 驗證 `config.yaml`
+- 在 crontab 中建立 `Claude Waker` 區塊
 
-### 自动运行
+## 使用方式
 
-安装完成后，程序会自动在指定时间运行，无需手动操作。
-
-### 手动测试
-
-测试程序是否正常工作：
+### 手動執行一次
 
 ```bash
 ./.venv/bin/python3 ./waker.py
 ```
 
-### 查看日志
+### 查詢 reset time
+
+從 `config.yaml` 中所有有 `session_key` 的帳號查詢：
+
+```bash
+./.venv/bin/python3 ./reset_time_fetcher.py
+```
+
+只查詢指定帳號：
+
+```bash
+./.venv/bin/python3 ./reset_time_fetcher.py --account "主帳號"
+```
+
+也可以直接用環境變數或參數提供 sessionKey：
+
+```bash
+CLAUDE_SESSION_KEY="sk-ant-sid01-..." ./.venv/bin/python3 ./reset_time_fetcher.py
+```
+
+### 查看日誌
+
+程式日誌：
 
 ```bash
 tail -f waker.log
 ```
 
-日志示例：
-```
-[2025-12-03 07:05:01] ============================================================
-[2025-12-03 07:05:01] Claude Waker 开始运行
-[2025-12-03 07:05:01] ✓ 检测到操作系统: Mac
-[2025-12-03 07:05:01] 开始唤醒任务，共 2 个账号
-[2025-12-03 07:05:01] 正在唤醒账号: 主账号
-[2025-12-03 07:05:03] ✅ 主账号 - 唤醒成功
-[2025-12-03 07:05:05] 正在唤醒账号: 备用账号
-[2025-12-03 07:05:07] ✅ 备用账号 - 唤醒成功
-[2025-12-03 07:05:07] ------------------------------------------------------------
-[2025-12-03 07:05:07] 唤醒任务完成: 成功 2 个，失败 0 个
-[2025-12-03 07:05:07] ============================================================
-```
-
-### 查看 Crontab 任务
+cron stdout/stderr：
 
 ```bash
-crontab -l | grep "Claude Waker"
+tail -f waker.cron.log
 ```
 
-### 修改唤醒时间
-
-1. 编辑 `config.yaml` 中的 `wake_hours`
-2. 重新运行 `./setup.sh` 更新 crontab
-
-### 卸载
-
-运行卸载脚本：
+### 查看目前 crontab
 
 ```bash
-./uninstall.sh
+crontab -l | grep -A 2 -B 1 "Claude Waker"
 ```
 
-## ⚙️ 配置说明
+### 修改喚醒時間
 
-### config.yaml
+1. 編輯 `config.yaml` 的 `wake_hours`。
+2. 重新執行 `./setup.sh`。
+3. 若腳本偵測到既有 Claude Waker 任務，選擇替換。
 
-| 字段 | 说明 | 格式 |
-|------|------|------|
-| `accounts` | Claude 账号列表 | 数组，每个账号包含 `name`、`token`，建议同时配置 `session_key` |
-| `wake_hours` | 唤醒时间 | 字符串，逗号分隔的小时数（0-23） |
-| `wake_prompt` | 唤醒時發送的訊息 | 字符串 |
-| `wake_max_budget_usd` | 單次喚醒請求的最高預算 | 數字，預設 `0.02` |
-| `wake_model` | 喚醒請求使用的模型 | 字符串，例如 `haiku`；留空則使用 Claude Code 預設模型 |
+## 設定說明
 
-### 唤醒时间示例
+| 欄位 | 必填 | 說明 |
+| --- | --- | --- |
+| `accounts` | 是 | Claude 帳號清單。每個帳號至少需要 `name` 與 `token`。 |
+| `accounts[].name` | 是 | 日誌中顯示的帳號名稱。 |
+| `accounts[].token` | 是 | Claude Code OAuth token，用於送出喚醒請求。 |
+| `accounts[].session_key` | 否 | claude.ai 的 `sessionKey` cookie，用於查詢 reset time。 |
+| `wake_hours` | 是 | 逗號分隔的小時數，範圍 `0-23`。實際觸發分鐘固定為 `05`。 |
+| `wake_prompt` | 否 | 喚醒請求送出的 prompt。未設定時使用內建預設值。 |
+| `wake_max_budget_usd` | 否 | 單次喚醒請求最高預算，預設 `0.02`。 |
+| `wake_model` | 否 | Claude Code CLI 模型 alias 或完整模型名稱。 |
+
+## 喚醒時間範例
 
 ```yaml
-# 早中晚各一次
+# 早上、中午、傍晚
 wake_hours: "7,12,17"
 
-# 上班前、午休后、下班前
-wake_hours: "9,14,18"
+# 上班前、午休後、晚間
+wake_hours: "9,14,19"
 
-# 仅工作日早晨（需要手动修改 crontab 添加星期限制）
-wake_hours: "9"
+# 只在早上排程一次
+wake_hours: "8"
 ```
 
-**注意**: 实际触发时间为每小时的 **05 分**（如 7:05, 12:05）。这不会浪费 5 分钟配额，因为 Claude 从整点开始计时。
+實際 cron 會在每個指定小時的第 5 分鐘執行，例如 `7,12,17` 代表 `7:05`、`12:05`、`17:05`。
 
-## 🔧 高级用法
+## 工作日限定
 
-### 限制工作日运行
-
-手动编辑 crontab，添加工作日限制：
+`setup.sh` 目前會建立每日執行的 crontab。若只想在工作日執行，可以手動編輯：
 
 ```bash
 crontab -e
 ```
 
-修改 Claude Waker 任务为：
+將 Claude Waker 區塊中的排程改成：
 
 ```cron
-# Claude Waker - Auto wake Claude accounts (仅工作日)
-5 7,12,17 * * 1-5 cd /path/to/claude_waker && PATH=.venv/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin ./.venv/bin/python3 ./waker.py >> ./waker.cron.log 2>&1
+5 7,12,17 * * 1-5 cd /path/to/claude-waker && PATH=.venv/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin ./.venv/bin/python3 ./waker.py >> ./waker.cron.log 2>&1
 ```
 
-`1-5` 表示周一到周五。
+其中 `1-5` 代表週一到週五。
 
-### 自定义日志位置
+## 卸載
 
-修改 `waker.py` 中的 `LOG_FILE` 变量：
-
-```python
-LOG_FILE = Path("/your/custom/path/waker.log")
-```
-
-### 调整超时时间
-
-修改 `waker.py` 中的超时设置：
-
-```python
-async with asyncio.timeout(60):  # 修改为你想要的秒数
-```
-
-## ❓ 常见问题
-
-### Q: 如何确认 token 是否有效？
-
-运行 `./setup.sh`，脚本会自动验证 token。
-
-或手动测试：
-```bash
-./.venv/bin/python3 ./waker.py
-```
-
-### Q: 程序没有按时运行？
-
-1. 检查 crontab 是否正确：`crontab -l | grep "Claude Waker"`
-2. 确认系统时间正确：`date`
-3. 检查日志文件：`tail -f waker.log`
-4. 确认 cron 服务运行正常（macOS 需要授权终端访问）
-
-### Q: Token 过期了怎么办？
-
-重新获取 token 并更新 `config.yaml`：
+移除 crontab 任務：
 
 ```bash
-claude setup-token
-# 复制新 token 到 config.yaml
+./uninstall.sh
 ```
 
-如果 `session_key` 过期，也请重新从浏览器的 claude.ai cookie 取得并更新 `config.yaml`。`session_key` 只用于查询 `five_hour_resets_at`，失效时程序会直接执行喚醒。
+卸載腳本只會刪除 Claude Waker 的 crontab 區塊，不會刪除專案檔案、`.venv` 或 `config.yaml`。
 
-### Q: 如何添加更多账号？
+## 開發與測試
 
-在 `config.yaml` 中添加新账号：
-
-```yaml
-accounts:
-  - name: "账号1"
-    token: "token1"
-    session_key: "sessionKey1"
-  - name: "账号2"
-    token: "token2"
-    session_key: "sessionKey2"
-  - name: "账号3"  # 新增
-    token: "token3"
-    session_key: "sessionKey3"
-```
-
-无需重新运行 `setup.sh`。
-
-### Q: 可以配置很多个唤醒时间吗？
-
-可以。修改 `wake_hours` 即可，如：
-
-```yaml
-wake_hours: "6,9,12,15,18,21"  # 6 个时间点
-```
-
-### Q: 日志文件太大怎么办？
-
-使用 logrotate 或手动清理：
+安裝依賴後可以執行測試：
 
 ```bash
-# 手动清空日志
-> waker.log
-
-# 或保留最后 100 行
-tail -100 waker.log > waker.log.tmp && mv waker.log.tmp waker.log
+./.venv/bin/python3 -m pytest
 ```
 
-### Q: macOS 上 cron 没有权限运行？
+目前主要檔案：
 
-macOS 需要授权终端访问：
+- `waker.py`：主排程流程，負責讀取設定、判斷是否需要喚醒、統計結果。
+- `wake_worker.py`：隔離執行 Claude CLI / SDK 的 worker。
+- `reset_time_fetcher.py`：查詢 claude.ai reset time。
+- `setup.sh`：安裝依賴並管理 crontab。
+- `uninstall.sh`：移除 crontab 任務。
 
-1. 系统偏好设置 → 安全性与隐私 → 隐私 → 完全磁盘访问权限
-2. 添加 `/usr/sbin/cron` 或你使用的终端应用
+## 安全提醒
 
-## 📄 项目结构
+- `config.yaml` 會包含 OAuth token 與 sessionKey，請不要提交到公開 repository。
+- 若懷疑 token 外洩，請重新登入或重新產生 token。
+- `session_key` 來自瀏覽器 cookie，可能會過期；過期時重新取得即可。
+- 本工具會對 Claude 送出真實請求，請自行確認符合你的帳號使用條款與使用情境。
 
-```
-claude_waker/
-├── waker.py              # 主程序
-├── setup.sh              # 安装脚本
-├── config.yaml           # 配置文件（需手动创建）
-├── config.yaml.example   # 配置示例
-├── requirements.txt      # Python 依赖
-├── .gitignore
-├── .venv/               # 虚拟环境（setup.sh 自动创建）
-├── waker.log            # 日志文件（自动生成）
-└── README.md            # 本文件
-```
+## 授權
 
-## 🔗 相关链接
-
-- [Claude Code 文档](https://docs.claude.com/en/docs/claude-code)
-- [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview)
-- [uv - Python 包管理器](https://github.com/astral-sh/uv)
-- [参考项目 - claude-oauth-demo](https://github.com/anthropics/claude-agent-sdk-python)
-
-## 📜 许可证
-
-MIT
-
-## 🙏 致谢
-
-本项目参考了 [claude-oauth-demo](../claude-oauth-demo) 的 OAuth 认证实现。
-
----
-
-**祝你使用愉快！充分利用 Claude Pro/Max 的每一分钟额度！** 🚀
+請參考原始專案授權與本 fork 的 repository 設定。
