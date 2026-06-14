@@ -24,7 +24,7 @@ wake_hours: "7,12,17"
 wake_prompt: "In one short sentence, confirm this scheduled Claude Code session is active and ready for use."
 
 # 單次喚醒請求的最高預算
-wake_max_budget_usd: 0.02
+wake_max_budget_usd: 0.03
 
 # 喚醒請求使用的模型
 # 可填 Claude Code 支援的模型 alias 或完整模型名稱，例如 "haiku"

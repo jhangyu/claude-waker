@@ -120,7 +120,7 @@ wake_hours: "7,12,17"
 wake_prompt: "In one short sentence, confirm this scheduled Claude Code session is active and ready for use."
 
 # 单次唤醒请求的最高预算
-wake_max_budget_usd: 0.02
+wake_max_budget_usd: 0.03
 
 # Claude Code CLI 支持的模型 alias 或完整模型名称；留空则使用 CLI 默认模型
 wake_model: "haiku"
@@ -206,7 +206,7 @@ crontab -l | grep -A 2 -B 1 "Claude Waker"
 | `accounts[].session_key` | 否 | claude.ai 的 `sessionKey` cookie，用于查询 reset time。 |
 | `wake_hours` | 是 | 逗号分隔的小时数，范围 `0-23`。实际执行分钟固定为 `05`。 |
 | `wake_prompt` | 否 | 唤醒请求发送的 prompt。未设置时使用内置默认值。 |
-| `wake_max_budget_usd` | 否 | 单次唤醒请求最高预算，默认 `0.02`。 |
+| `wake_max_budget_usd` | 否 | 单次唤醒请求最高预算，默认 `0.03`。 |
 | `wake_model` | 否 | Claude Code CLI 模型 alias 或完整模型名称。 |
 
 ## 唤醒时间示例

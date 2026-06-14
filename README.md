@@ -120,7 +120,7 @@ wake_hours: "7,12,17"
 wake_prompt: "In one short sentence, confirm this scheduled Claude Code session is active and ready for use."
 
 # Maximum budget for one wake request.
-wake_max_budget_usd: 0.02
+wake_max_budget_usd: 0.03
 
 # Claude Code CLI model alias or full model name. Leave empty to use the CLI default.
 wake_model: "haiku"
@@ -206,7 +206,7 @@ crontab -l | grep -A 2 -B 1 "Claude Waker"
 | `accounts[].session_key` | No | claude.ai `sessionKey` cookie used for reset-time lookup. |
 | `wake_hours` | Yes | Comma-separated hours from `0` to `23`. Runs at minute `05`. |
 | `wake_prompt` | No | Prompt sent by the wake-up request. Uses the built-in default when omitted. |
-| `wake_max_budget_usd` | No | Maximum budget for one wake request. Defaults to `0.02`. |
+| `wake_max_budget_usd` | No | Maximum budget for one wake request. Defaults to `0.03`. |
 | `wake_model` | No | Claude Code CLI model alias or full model name. |
 
 ## Wake Hour Examples
