@@ -201,19 +201,41 @@ echo ""
 echo "配置 crontab 任務..."
 printf -v CRON_PROJECT_DIR "%q" "$SCRIPT_DIR"
 CRON_COMMAND="5 $WAKE_HOURS * * * cd $CRON_PROJECT_DIR && PATH=.venv/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin ./.venv/bin/python3 ./waker.py >> ./waker.cron.log 2>&1"
-CRON_COMMENT="# Claude Waker - Auto wake Claude accounts"
+CRON_BEGIN="# Claude Waker - BEGIN"
+CRON_END="# Claude Waker - END"
+CLAUDE_WAKER_PATTERN="Claude Waker|claude-waker.*waker\\.py|\\.venv/bin/python3 ./waker\\.py"
 
 # 檢查是否已存在
-if crontab -l 2>/dev/null | grep -q -E "Claude Waker|claude-waker.*waker\\.py|\\.venv/bin/python3 ./waker\\.py"; then
+if crontab -l 2>/dev/null | grep -q -E "$CLAUDE_WAKER_PATTERN"; then
     echo -e "${YELLOW}⚠️  檢測到已存在的 Claude Waker 任務${NC}"
     read -p "是否替換現有任務? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        # 刪除舊任務
-        crontab -l 2>/dev/null \
-            | grep -v "Claude Waker" \
-            | grep -v -E "claude-waker.*waker\\.py|\\.venv/bin/python3 ./waker\\.py" \
-            | crontab -
+        (crontab -l 2>/dev/null || true) | python3 -c '
+import re
+import sys
+
+begin = "# Claude Waker - BEGIN"
+end = "# Claude Waker - END"
+pattern = re.compile(r"Claude Waker|claude-waker.*waker\.py|\.venv/bin/python3 ./waker\.py")
+inside_block = False
+filtered = []
+
+for line in sys.stdin.read().splitlines():
+    if line.strip() == begin:
+        inside_block = True
+        continue
+    if inside_block:
+        if line.strip() == end:
+            inside_block = False
+        continue
+    if pattern.search(line):
+        continue
+    filtered.append(line)
+
+if filtered:
+    sys.stdout.write("\n".join(filtered).rstrip() + "\n")
+' | crontab -
         echo "已刪除舊任務"
     else
         echo "保留現有任務，跳過"
@@ -222,7 +244,7 @@ if crontab -l 2>/dev/null | grep -q -E "Claude Waker|claude-waker.*waker\\.py|\\
 fi
 
 # 添加新任務
-(crontab -l 2>/dev/null; echo ""; echo "$CRON_COMMENT"; echo "$CRON_COMMAND") | crontab -
+(crontab -l 2>/dev/null || true; echo ""; echo "$CRON_BEGIN"; echo "$CRON_COMMAND"; echo "$CRON_END") | crontab -
 echo -e "${GREEN}✓${NC} Crontab 任務已添加"
 
 echo ""

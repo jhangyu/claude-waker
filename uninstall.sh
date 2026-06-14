@@ -52,18 +52,20 @@ crontab -l 2>/dev/null | python3 -c '
 import re
 import sys
 
+begin = "# Claude Waker - BEGIN"
+end = "# Claude Waker - END"
 pattern = re.compile(r"Claude Waker|claude-waker.*waker\.py|\.venv/bin/python3 ./waker\.py")
 lines = sys.stdin.read().splitlines()
 filtered = []
-skip_next = False
+inside_block = False
 
 for line in lines:
-    if skip_next:
-        skip_next = False
-        if pattern.search(line):
-            continue
-    if "Claude Waker" in line:
-        skip_next = True
+    if line.strip() == begin:
+        inside_block = True
+        continue
+    if inside_block:
+        if line.strip() == end:
+            inside_block = False
         continue
     if pattern.search(line):
         continue

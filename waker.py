@@ -4,6 +4,7 @@ Claude Waker - 自動喚醒 Claude 賬號以優化5小時限額窗口
 """
 
 import asyncio
+import json
 import logging
 import shutil
 import sys
@@ -16,6 +17,7 @@ from reset_time_fetcher import ClaudeResetTimeError, fetch_reset_times
 
 # 設置日誌
 LOG_FILE = Path(__file__).parent / "waker.log"
+WAKE_WORKER_PATH = Path(__file__).parent / "wake_worker.py"
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(message)s',
@@ -138,147 +140,16 @@ def should_wake_account(account_name, session_key):
     return True
 
 
-def build_wake_subprocess_script(oauth_token, wake_prompt, wake_max_budget_usd, wake_model, claude_cli_path):
-    """建立隔離 token 的子程序腳本。"""
-    command_timeout = WAKE_COMMAND_TIMEOUT_SECONDS
-    max_budget = float(wake_max_budget_usd)
-    return f'''
-import os
-import asyncio
-import json
-import subprocess
-import tempfile
-
-async def run():
-    os.environ['CLAUDE_CODE_OAUTH_TOKEN'] = {repr(oauth_token)}
-    claude_cli_path = {repr(claude_cli_path)}
-    requested_wake_model = {repr(wake_model)}
-    requested_max_budget_usd = {repr(max_budget)}
-
-    def first_present(*values):
-        for value in values:
-            if value is not None and value != '':
-                return value
-        return None
-
-    def print_budget_details(source, payload=None):
-        payload = payload or {{}}
-        cost = first_present(
-            payload.get('total_cost_usd'),
-            payload.get('cost_usd'),
-            payload.get('cost'),
-            payload.get('estimated_cost_usd'),
-        )
-        parts = [f"max_budget_usd={{requested_max_budget_usd}}"]
-        if cost is not None:
-            parts.append(f"reported_cost_usd={{cost}}")
-        parts.append(f"source={{source}}")
-        print(f"BUDGET_DETAILS:{{', '.join(parts)}}")
-
-    def run_claude_json(prompt, timeout={command_timeout}, use_model=True):
-        command = [
-            claude_cli_path or 'claude',
-            '-p',
-            prompt,
-            '--output-format',
-            'json',
-            '--no-session-persistence',
-            '--effort',
-            'low',
-            '--max-budget-usd',
-            str(requested_max_budget_usd),
-        ]
-        if use_model and requested_wake_model:
-            command.extend(['--model', requested_wake_model])
-        try:
-            result = subprocess.run(
-                command,
-                text=True,
-                capture_output=True,
-                timeout=timeout,
-                env=os.environ.copy(),
-            )
-            payload = json.loads(result.stdout) if result.stdout.strip() else {{}}
-            if result.returncode != 0 or payload.get('is_error'):
-                error = payload.get('result') or payload.get('subtype') or result.stderr.strip() or result.stdout.strip()
-                print(f"CLAUDE_ERROR:{{error}}")
-                if 'max_budget' in str(error):
-                    print_budget_details('claude-cli', payload)
-                return None
-            return payload
-        except Exception as e:
-            print(f"CLAUDE_ERROR:{{e}}")
-            return None
-
-    def wake_with_cli():
-        payload = run_claude_json({repr(wake_prompt)})
-        if not payload:
-            return False
-        print(f"COST_USD:{{payload.get('total_cost_usd', 'unknown')}}")
-        print(f"SESSION_ID:{{payload.get('session_id', '')}}")
-        print(f"MODEL_NAME:{{payload.get('model', '') or requested_wake_model or ''}}")
-        print("SUCCESS:ResultMessage")
-        return True
-
-    if wake_with_cli():
-        return
-
-    # Fallback to the SDK for environments where `claude -p` cannot run.
-    try:
-        from claude_agent_sdk import query, ClaudeAgentOptions
-
-        async with asyncio.timeout({command_timeout}):
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                options = ClaudeAgentOptions(
-                    cwd=tmp_dir,
-                    tools=[],
-                    max_turns=1,
-                    max_budget_usd={repr(max_budget)},
-                    model={repr(wake_model)},
-                    setting_sources=[],
-                    cli_path=claude_cli_path,
-                )
-                gen = query(prompt={repr(wake_prompt)}, options=options)
-                assistant_seen = False
-                wake_success = False
-                wake_error = None
-                wake_cost = None
-                wake_error_cost = None
-                async for msg in gen:
-                    msg_type = type(msg).__name__
-                    if msg_type == 'AssistantMessage':
-                        assistant_seen = True
-                    if msg_type == 'ResultMessage':
-                        subtype = getattr(msg, 'subtype', '')
-                        result = getattr(msg, 'result', None)
-                        if getattr(msg, 'is_error', False):
-                            wake_error = result or subtype or 'result_error'
-                            wake_error_cost = getattr(msg, 'total_cost_usd', None)
-                        else:
-                            wake_success = True
-                            wake_cost = getattr(msg, 'total_cost_usd', 'unknown')
-                if wake_error:
-                    print(f"ERROR:{{wake_error}}")
-                    if 'max_budget' in str(wake_error):
-                        print_budget_details('claude-agent-sdk', {{'total_cost_usd': wake_error_cost}})
-                    return
-                if wake_success:
-                    print(f"COST_USD:{{wake_cost}}")
-                    print(f"MODEL_NAME:{{requested_wake_model or ''}}")
-                    print("SUCCESS:ResultMessage")
-                    return
-                if assistant_seen:
-                    print(f"MODEL_NAME:{{requested_wake_model or ''}}")
-                    print("SUCCESS:AssistantMessage")
-                    return
-            print("ERROR:未收到有效響應")
-    except asyncio.TimeoutError:
-        print("TIMEOUT:響應超時")
-    except Exception as e:
-        print(f"ERROR:{{e}}")
-
-asyncio.run(run())
-'''
+def build_wake_worker_payload(oauth_token, wake_prompt, wake_max_budget_usd, wake_model, claude_cli_path):
+    """建立傳給 wake_worker.py 的 JSON payload。"""
+    return {
+        "oauth_token": oauth_token,
+        "wake_prompt": wake_prompt,
+        "wake_max_budget_usd": float(wake_max_budget_usd),
+        "wake_model": wake_model,
+        "claude_cli_path": claude_cli_path,
+        "command_timeout_s": WAKE_COMMAND_TIMEOUT_SECONDS,
+    }
 
 
 def load_config():
@@ -323,7 +194,7 @@ async def wake_account_subprocess(account_name, oauth_token, wake_prompt, wake_m
     try:
         logger.info(f"正在喚醒賬號: {account_name}")
         claude_cli_path = shutil.which('claude') or shutil.which('claude-bun')
-        script = build_wake_subprocess_script(
+        worker_payload = build_wake_worker_payload(
             oauth_token,
             wake_prompt,
             wake_max_budget_usd,
@@ -333,13 +204,14 @@ async def wake_account_subprocess(account_name, oauth_token, wake_prompt, wake_m
 
         # 運行子進程
         process = await asyncio.create_subprocess_exec(
-            sys.executable, '-c', script,
+            sys.executable, str(WAKE_WORKER_PATH),
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
         try:
             stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
+                process.communicate(json.dumps(worker_payload).encode("utf-8")),
                 timeout=WAKE_SUBPROCESS_TIMEOUT_SECONDS,
             )
             output = stdout.decode('utf-8').strip()

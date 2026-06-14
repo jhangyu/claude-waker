@@ -48,6 +48,22 @@ class WakeOutputParsingTests(unittest.TestCase):
 
         self.assertEqual(parsed["status"], "timeout")
 
+    def test_build_wake_worker_payload(self):
+        payload = waker.build_wake_worker_payload(
+            "oauth-token",
+            "wake prompt",
+            "0.02",
+            "haiku",
+            "/path/to/claude",
+        )
+
+        self.assertEqual(payload["oauth_token"], "oauth-token")
+        self.assertEqual(payload["wake_prompt"], "wake prompt")
+        self.assertEqual(payload["wake_max_budget_usd"], 0.02)
+        self.assertEqual(payload["wake_model"], "haiku")
+        self.assertEqual(payload["claude_cli_path"], "/path/to/claude")
+        self.assertEqual(payload["command_timeout_s"], waker.WAKE_COMMAND_TIMEOUT_SECONDS)
+
 
 class WakeGateTests(unittest.TestCase):
     def setUp(self):
