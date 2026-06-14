@@ -23,6 +23,7 @@ wake_state.json
 
 # Local research/debug artifacts
 debug/
+docs/
 third_party/
 
 # IDE
