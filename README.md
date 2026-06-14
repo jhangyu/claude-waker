@@ -41,7 +41,7 @@ Claude Pro/Max 账号有每 5 小时的使用限额，但这个限额**不是固
 
 **完整功能**：
 - ✅ 支持多个 Claude 账号同时唤醒
-- ✅ 自定义唤醒时间（最多 5 个时间点）
+- ✅ 自定义唤醒时间（可配置多个时间点）
 - ✅ 自动配置 crontab 定时任务（claude scheduler）
 - ✅ 最小化 API 请求（短 prompt + 快速超时）
 - ✅ 详细日志记录
@@ -119,12 +119,25 @@ cd claude_waker
 accounts:
   - name: "主账号"
     token: "sk-ant-oat03-...（第一个账号的token）"
+    session_key: "sk-ant-sid01-...（claude.ai 的 sessionKey cookie）"
   - name: "备用账号"
     token: "sk-ant-oat03-...（第二个账号的token）"
+    session_key: "sk-ant-sid01-...（claude.ai 的 sessionKey cookie）"
 
 # 唤醒时间（小时，0-23）
 # 实际触发时间为每小时的 05 分
 wake_hours: "7,12,17"  # 在 7:05, 12:05, 17:05 唤醒
+
+# 喚醒訊息
+# 程式會另外使用 /usage 查詢用量；這裡保留一個低成本的真實模型請求來喚醒
+wake_prompt: "In one short sentence, confirm this scheduled Claude Code session is active and ready for use."
+
+# 單次喚醒請求的最高預算
+wake_max_budget_usd: 0.02
+
+# 喚醒請求使用的模型
+# 可填 Claude Code 支援的模型 alias 或完整模型名稱，例如 "haiku"
+wake_model: "haiku"
 ```
 
 #### 4. 完成安装
@@ -138,6 +151,7 @@ wake_hours: "7,12,17"  # 在 7:05, 12:05, 17:05 唤醒
 安装脚本会：
 - ✓ 创建虚拟环境（使用 uv）
 - ✓ 安装依赖
+- ✓ 将 Claude CLI 链接到 `.venv/bin/claude`，让 cron 能在干净环境中找到它
 - ✓ 验证配置和 token
 - ✓ 自动配置 crontab 定时任务
 
@@ -152,7 +166,7 @@ wake_hours: "7,12,17"  # 在 7:05, 12:05, 17:05 唤醒
 测试程序是否正常工作：
 
 ```bash
-.venv/bin/python3 waker.py
+./.venv/bin/python3 ./waker.py
 ```
 
 ### 查看日志
@@ -201,8 +215,11 @@ crontab -l | grep "Claude Waker"
 
 | 字段 | 说明 | 格式 |
 |------|------|------|
-| `accounts` | Claude 账号列表 | 数组，每个账号包含 `name` 和 `token` |
-| `wake_hours` | 唤醒时间 | 字符串，逗号分隔的小时数（0-23），最多 5 个 |
+| `accounts` | Claude 账号列表 | 数组，每个账号包含 `name`、`token`，建议同时配置 `session_key` |
+| `wake_hours` | 唤醒时间 | 字符串，逗号分隔的小时数（0-23） |
+| `wake_prompt` | 唤醒時發送的訊息 | 字符串 |
+| `wake_max_budget_usd` | 單次喚醒請求的最高預算 | 數字，預設 `0.02` |
+| `wake_model` | 喚醒請求使用的模型 | 字符串，例如 `haiku`；留空則使用 Claude Code 預設模型 |
 
 ### 唤醒时间示例
 
@@ -233,7 +250,7 @@ crontab -e
 
 ```cron
 # Claude Waker - Auto wake Claude accounts (仅工作日)
-5 7,12,17 * * 1-5 cd /path/to/claude_waker && .venv/bin/python3 waker.py
+5 7,12,17 * * 1-5 cd /path/to/claude_waker && PATH=.venv/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin ./.venv/bin/python3 ./waker.py >> ./waker.cron.log 2>&1
 ```
 
 `1-5` 表示周一到周五。
@@ -262,7 +279,7 @@ async with asyncio.timeout(60):  # 修改为你想要的秒数
 
 或手动测试：
 ```bash
-.venv/bin/python3 waker.py
+./.venv/bin/python3 ./waker.py
 ```
 
 ### Q: 程序没有按时运行？
@@ -281,6 +298,8 @@ claude setup-token
 # 复制新 token 到 config.yaml
 ```
 
+如果 `session_key` 过期，也请重新从浏览器的 claude.ai cookie 取得并更新 `config.yaml`。`session_key` 只用于查询 `five_hour_resets_at`，失效时程序会直接执行喚醒。
+
 ### Q: 如何添加更多账号？
 
 在 `config.yaml` 中添加新账号：
@@ -289,17 +308,20 @@ claude setup-token
 accounts:
   - name: "账号1"
     token: "token1"
+    session_key: "sessionKey1"
   - name: "账号2"
     token: "token2"
+    session_key: "sessionKey2"
   - name: "账号3"  # 新增
     token: "token3"
+    session_key: "sessionKey3"
 ```
 
 无需重新运行 `setup.sh`。
 
-### Q: 可以超过 5 个唤醒时间吗？
+### Q: 可以配置很多个唤醒时间吗？
 
-技术上可以，但建议不超过 5 个。修改 `wake_hours` 即可，如：
+可以。修改 `wake_hours` 即可，如：
 
 ```yaml
 wake_hours: "6,9,12,15,18,21"  # 6 个时间点

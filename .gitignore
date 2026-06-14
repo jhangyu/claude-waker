@@ -16,6 +16,14 @@ config.yaml
 # Logs
 *.log
 waker.log
+waker.cron.log
+
+# Runtime state
+wake_state.json
+
+# Local research/debug artifacts
+debug/
+third_party/
 
 # IDE
 .vscode/

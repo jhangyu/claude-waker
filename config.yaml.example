@@ -2,15 +2,30 @@
 # 复制此文件为 config.yaml 并填入真实的 OAuth Token
 
 # Claude 账号列表
+# token: Claude Code OAuth token，用於實際送出喚醒請求
+# session_key: claude.ai cookie，用於查詢 five_hour_resets_at；若過期或缺少會直接喚醒
 accounts:
   - name: "主账号"
     token: "sk-ant-oat03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    session_key: "sk-ant-sid01-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   - name: "备用账号"
     token: "sk-ant-oat03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    session_key: "sk-ant-sid01-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 # 唤醒时间（小时）
-# 格式：逗号分隔的小时数，0-23，最多5个
+# 格式：逗号分隔的小时数，0-23
 # 示例：
 #   "7,12,17" - 在 7:05, 12:05, 17:05 唤醒
 #   "9,14,19" - 在 9:05, 14:05, 19:05 唤醒
 wake_hours: "7,12,17"
+
+# 喚醒時送出的訊息
+# 程式會另外使用 /usage 查詢用量；這裡保留一個低成本的真實模型請求來喚醒
+wake_prompt: "In one short sentence, confirm this scheduled Claude Code session is active and ready for use."
+
+# 單次喚醒請求的最高預算
+wake_max_budget_usd: 0.02
+
+# 喚醒請求使用的模型
+# 可填 Claude Code 支援的模型 alias 或完整模型名稱，例如 "haiku"
+wake_model: "haiku"
